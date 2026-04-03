@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Submit Sensor Reading</h1>
+    <p>Enter the latest machine metrics. The system records the entry time automatically and predicts whether the machine is healthy or trending toward failure.</p>
+</section>
+
+<section class="grid">
+    <div class="panel">
+        <h2>Machine Input</h2>
+        <form method="post">
+            {% csrf_token %}
+            <div class="form-grid">
+                {% for field in form %}
+                    <div>
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}
+                            <small style="color: var(--danger);">{{ field.errors|striptags }}</small>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+            <button class="btn" type="submit">Predict Machine Health</button>
+        </form>
+    </div>
+    <div class="panel">
+        <h2>Recent Readings</h2>
+        <div class="reading-list">
+            {% for reading in recent_predictions %}
+                <div class="reading-card">
+                    <strong>{{ reading.machine_id }}</strong><br>
+                    <small>{{ reading.recorded_at }}</small><br><br>
+                    {% if reading.prediction %}
+                        <span class="status-chip {% if reading.prediction.predicted_failure %}status-risk{% else %}status-healthy{% endif %}">
+                            {% if reading.prediction.predicted_failure %}Failure Risk{% else %}Healthy{% endif %}
+                        </span>
+                    {% else %}
+                        <span>No prediction yet</span>
+                    {% endif %}
+                </div>
+            {% empty %}
+                <div class="reading-card">No readings submitted yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endblock %}

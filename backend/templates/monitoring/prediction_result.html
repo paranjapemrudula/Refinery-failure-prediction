@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Prediction Result for {{ prediction.sensor_reading.machine_id }}</h1>
+    <p>Recorded at {{ prediction.sensor_reading.recorded_at }}</p>
+    <span class="status-chip {% if prediction.predicted_failure %}status-risk{% else %}status-healthy{% endif %}">
+        {% if prediction.predicted_failure %}Failure Risk Detected{% else %}Machine Healthy{% endif %}
+    </span>
+</section>
+
+<section class="metric-grid">
+    <div class="metric-card">
+        <h3>Failure Probability</h3>
+        <p>{{ prediction.failure_probability }}</p>
+    </div>
+    <div class="metric-card">
+        <h3>Alert Level</h3>
+        <p>{{ prediction.alert_level }}</p>
+    </div>
+    <div class="metric-card">
+        <h3>Maintenance Status</h3>
+        <p>{% if alert %}{{ alert.status|title }}{% else %}No maintenance alert{% endif %}</p>
+    </div>
+</section>
+
+<section class="grid" style="margin-top: 24px;">
+    <div class="panel">
+        <h2>Submitted Sensor Values</h2>
+        <div class="stat">Temperature: {{ prediction.sensor_reading.temperature }}</div>
+        <div class="stat">Pressure: {{ prediction.sensor_reading.pressure }}</div>
+        <div class="stat">Vibration: {{ prediction.sensor_reading.vibration }}</div>
+        <div class="stat">Flow Rate: {{ prediction.sensor_reading.flow_rate }}</div>
+        <div class="stat">Humidity: {{ prediction.sensor_reading.humidity }}</div>
+    </div>
+    <div class="panel">
+        <h2>Maintenance Guidance</h2>
+        <p><strong>Recommended action:</strong> {{ prediction.recommended_action }}</p>
+        <p><strong>Explanation:</strong> {{ prediction.explanation }}</p>
+        {% if alert %}
+            <p><strong>Scheduled for:</strong> {{ alert.scheduled_for }}</p>
+            <p><strong>Alert note:</strong> {{ alert.note }}</p>
+        {% endif %}
+        {% if report %}
+            <p><a class="btn" href="{% url 'generated_report' report.id %}">Open Maintenance Report</a></p>
+        {% endif %}
+        <a class="btn" href="{% url 'sensor_entry' %}">Submit Another Reading</a>
+    </div>
+</section>
+{% endblock %}

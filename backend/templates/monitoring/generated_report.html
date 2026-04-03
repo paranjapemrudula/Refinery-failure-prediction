@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>{{ report.title }}</h1>
+    <p>Generated at {{ report.generated_at }}</p>
+    <span class="status-chip {% if prediction.predicted_failure %}status-risk{% else %}status-healthy{% endif %}">
+        {% if prediction.predicted_failure %}Failure Risk{% else %}Healthy{% endif %}
+    </span>
+</section>
+
+<section class="metric-grid">
+    <div class="metric-card">
+        <h3>Machine</h3>
+        <p>{{ prediction.sensor_reading.machine_id }}</p>
+    </div>
+    <div class="metric-card">
+        <h3>Failure Probability</h3>
+        <p>{{ prediction.failure_probability|floatformat:2 }}</p>
+    </div>
+    <div class="metric-card">
+        <h3>Alert Level</h3>
+        <p>{{ prediction.alert_level }}</p>
+    </div>
+</section>
+
+<section class="grid" style="margin-top: 24px;">
+    <div class="panel">
+        <h2>Maintenance Summary</h2>
+        <p>{{ report.summary }}</p>
+        <h3>Root Cause Analysis</h3>
+        <p>{{ report.root_cause }}</p>
+    </div>
+    <div class="panel">
+        <h2>Recommended Steps</h2>
+        <pre style="white-space: pre-wrap; font-family: inherit;">{{ report.recommended_steps }}</pre>
+        {% if alert %}
+            <p><strong>Scheduled maintenance:</strong> {{ alert.scheduled_for }}</p>
+            <p><strong>Status:</strong> {{ alert.status|title }}</p>
+        {% endif %}
+        <a class="btn" href="{% url 'prediction_result' prediction.id %}">Back To Prediction</a>
+    </div>
+</section>
+{% endblock %}

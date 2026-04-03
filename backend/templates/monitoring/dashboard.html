@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+    <h1>Predictive Maintenance Control Center</h1>
+    <p>
+        Monitor pumps, compressors, and valves using sensor-driven predictions.
+        This prototype combines machine learning, alerting, and explainable maintenance guidance.
+    </p>
+    <a class="btn" href="{% url 'sensor_entry' %}">Submit Machine Reading</a>
+</section>
+
+<section class="grid">
+    <div class="panel">
+        <h2>System Workflow</h2>
+        <div class="stat"><strong>1.</strong> Capture temperature, pressure, vibration, flow rate, and humidity from the operator.</div>
+        <div class="stat"><strong>2.</strong> Store the reading with a backend timestamp for auditability.</div>
+        <div class="stat"><strong>3.</strong> Run the trained ML model to estimate failure probability.</div>
+        <div class="stat"><strong>4.</strong> Create maintenance alerts and show root-cause style explanations.</div>
+    </div>
+    <div class="panel">
+        <h2>Live Summary</h2>
+        <div class="stat">Total readings stored: {{ total_readings }}</div>
+        <div class="stat">High severity alerts: {{ high_alerts }}</div>
+        <div class="stat">
+            Average failure probability:
+            {% if average_failure_probability %}
+                {{ average_failure_probability|floatformat:2 }}
+            {% else %}
+                No predictions yet
+            {% endif %}
+        </div>
+        <div class="stat">API endpoint ready at <code>/api/predict/</code></div>
+    </div>
+</section>
+
+<section class="panel" style="margin-top: 24px;">
+    <h2>Machine Health Overview</h2>
+    <div class="machine-grid">
+        {% for machine in machine_status_cards %}
+            <div class="machine-card">
+                <strong>{{ machine.machine_id }}</strong><br>
+                <small>{{ machine.recorded_at }}</small><br><br>
+                <span class="status-chip {{ machine.status_class }}">{{ machine.status_label }}</span>
+                <div class="probability-bar">
+                    <div class="probability-fill" style="width: {{ machine.probability_percent }}%;"></div>
+                </div>
+                <small>Failure probability: {{ machine.probability_percent }}%</small>
+                <div class="stat">Temperature: {{ machine.temperature }}</div>
+                <div class="stat">Pressure: {{ machine.pressure }}</div>
+                <div class="stat">Vibration: {{ machine.vibration }}</div>
+                <div class="stat">Flow rate: {{ machine.flow_rate }}</div>
+                <div class="stat">Alert level: {{ machine.alert_level }}</div>
+            </div>
+        {% empty %}
+            <div class="reading-card">No machine status is available yet. Submit readings to populate this overview.</div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="grid" style="margin-top: 24px;">
+    <div class="panel">
+        <h2>Alert Distribution</h2>
+        {% for item in alert_distribution %}
+            <div class="chart-row">
+                <div class="chart-label">
+                    <span>{{ item.label }}</span>
+                    <span>{{ item.count }}</span>
+                </div>
+                <div class="alert-bar">
+                    <div class="alert-fill {{ item.css_class }}" style="width: {{ item.width_percent }}%;"></div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+    <div class="panel">
+        <h2>Active Maintenance Alerts</h2>
+        <div class="reading-list">
+            {% for alert in active_alerts %}
+                <div class="reading-card">
+                    <strong>{{ alert.prediction.sensor_reading.machine_id }}</strong><br>
+                    <small>Scheduled: {{ alert.scheduled_for }}</small><br><br>
+                    <span class="status-chip status-{{ alert.severity|lower }}">{{ alert.severity }}</span>
+                    <p>Status: {{ alert.status|title }}</p>
+                    <p>{{ alert.note }}</p>
+                </div>
+            {% empty %}
+                <div class="reading-card">No maintenance alerts have been created yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="panel" style="margin-top: 24px;">
+    <h2>Latest Predictions</h2>
+    <div class="reading-list compact">
+        {% for prediction in latest_predictions %}
+            <div class="reading-card">
+                <strong>{{ prediction.sensor_reading.machine_id }}</strong><br>
+                <small>{{ prediction.sensor_reading.recorded_at }}</small><br><br>
+                <span class="status-chip {% if prediction.predicted_failure %}status-risk{% else %}status-healthy{% endif %}">
+                    {% if prediction.predicted_failure %}Failure Risk{% else %}Healthy{% endif %}
+                </span>
+                <p>Probability: {{ prediction.failure_probability|floatformat:2 }}</p>
+                <p>Alert: {{ prediction.alert_level }}</p>
+            </div>
+        {% empty %}
+            <div class="reading-card">No prediction records yet. Submit a sensor entry to begin monitoring.</div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="panel" style="margin-top: 24px;">
+    <h2>Recent Generated Reports</h2>
+    <div class="reading-list compact">
+        {% for report in recent_reports %}
+            <div class="reading-card">
+                <strong>{{ report.prediction.sensor_reading.machine_id }}</strong><br>
+                <small>{{ report.generated_at }}</small>
+                <p>{{ report.title }}</p>
+                <a href="{% url 'generated_report' report.id %}">View full report</a>
+            </div>
+        {% empty %}
+            <div class="reading-card">No reports generated yet.</div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
