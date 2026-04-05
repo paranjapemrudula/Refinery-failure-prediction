@@ -6,6 +6,10 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_INPUT_PATH = BASE_DIR / "data" / "seed_machine_readings.csv"
+DEFAULT_OUTPUT_PATH = BASE_DIR / "data" / "synthetic_machine_readings.csv"
+
 
 CSV_FIELDS = [
     "timestamp",
@@ -25,12 +29,12 @@ def parse_args():
     )
     parser.add_argument(
         "--input",
-        default="data/seed_machine_readings.csv",
+        default=str(DEFAULT_INPUT_PATH),
         help="Path to the seed CSV file.",
     )
     parser.add_argument(
         "--output",
-        default="data/synthetic_machine_readings.csv",
+        default=str(DEFAULT_OUTPUT_PATH),
         help="Path for the generated CSV file.",
     )
     parser.add_argument(
@@ -114,6 +118,10 @@ def clamp(value, minimum, maximum):
     return max(minimum, min(value, maximum))
 
 
+def sigmoid(value):
+    return 1 / (1 + math.exp(-value))
+
+
 def machine_trend(machine_family, hour_index):
     cycle = math.sin(hour_index / 12.0)
     if machine_family == "PUMP":
@@ -125,16 +133,15 @@ def machine_trend(machine_family, hour_index):
 
 def synthesize_row(rng, machine_id, profile, timestamp, hour_index):
     risk_band = rng.random()
-    failure_probability = 0.08
-    if risk_band > 0.78:
-        failure_probability = 0.62
-    elif risk_band > 0.55:
-        failure_probability = 0.25
-
-    is_failure = weighted_choice(rng, failure_probability)
-
     trend = machine_trend(profile["machine_family"], hour_index)
-    stress = rng.uniform(0.85, 1.15) if is_failure else rng.uniform(0.10, 0.75)
+    if risk_band > 0.84:
+        stress_center = 0.86
+    elif risk_band > 0.58:
+        stress_center = 0.58
+    else:
+        stress_center = 0.30
+
+    stress = clamp(rng.gauss(stress_center, 0.18), 0.02, 1.12)
 
     healthy_temp = profile["healthy_temperature"]
     failure_temp = profile["failure_temperature"]
@@ -147,26 +154,28 @@ def synthesize_row(rng, machine_id, profile, timestamp, hour_index):
     healthy_humidity = profile["healthy_humidity"]
     failure_humidity = profile["failure_humidity"]
 
-    temperature = healthy_temp + (failure_temp - healthy_temp) * stress + trend
-    pressure = healthy_pressure + (failure_pressure - healthy_pressure) * stress + trend * 2.2
-    vibration = healthy_vibration + (failure_vibration - healthy_vibration) * stress + rng.uniform(-0.03, 0.03)
-    flow_rate = healthy_flow - (healthy_flow - failure_flow) * stress + rng.uniform(-2.5, 2.5)
-    humidity = healthy_humidity + (failure_humidity - healthy_humidity) * stress + rng.uniform(-1.5, 1.5)
-
-    if not is_failure:
-        if (
-            temperature > failure_temp - 1.0
-            and pressure > failure_pressure - 3.0
-            and vibration > failure_vibration - 0.02
-        ):
-            is_failure = 1
-
-    if is_failure:
-        temperature += rng.uniform(1.5, 4.5)
-        pressure += rng.uniform(4.0, 10.0)
-        vibration += rng.uniform(0.03, 0.08)
-        flow_rate -= rng.uniform(2.0, 6.0)
-        humidity += rng.uniform(1.0, 3.0)
+    temperature = healthy_temp + (failure_temp - healthy_temp) * stress + trend + rng.gauss(0, 2.8)
+    pressure = (
+        healthy_pressure
+        + (failure_pressure - healthy_pressure) * stress
+        + trend * 2.2
+        + rng.gauss(0, 7.0)
+    )
+    vibration = (
+        healthy_vibration
+        + (failure_vibration - healthy_vibration) * stress
+        + rng.gauss(0, 0.045)
+    )
+    flow_rate = (
+        healthy_flow
+        - (healthy_flow - failure_flow) * stress
+        + rng.gauss(0, 4.2)
+    )
+    humidity = (
+        healthy_humidity
+        + (failure_humidity - healthy_humidity) * stress
+        + rng.gauss(0, 2.4)
+    )
 
     temperature = round(clamp(temperature, 65.0, 110.0), 2)
     pressure = round(clamp(pressure, 170.0, 270.0), 2)
@@ -174,11 +183,29 @@ def synthesize_row(rng, machine_id, profile, timestamp, hour_index):
     flow_rate = round(clamp(flow_rate, 95.0, 140.0), 2)
     humidity = round(clamp(humidity, 38.0, 58.0), 2)
 
-    failure = 1 if (
-        is_failure
-        or (temperature >= failure_temp and pressure >= failure_pressure - 2)
-        or (vibration >= failure_vibration and flow_rate <= failure_flow + 2)
-    ) else 0
+    temp_risk = clamp((temperature - healthy_temp) / max(failure_temp - healthy_temp, 1), 0, 1.4)
+    pressure_risk = clamp(
+        (pressure - healthy_pressure) / max(failure_pressure - healthy_pressure, 1), 0, 1.4
+    )
+    vibration_risk = clamp(
+        (vibration - healthy_vibration) / max(failure_vibration - healthy_vibration, 0.01), 0, 1.5
+    )
+    flow_risk = clamp((healthy_flow - flow_rate) / max(healthy_flow - failure_flow, 1), 0, 1.4)
+    humidity_risk = clamp(
+        (humidity - healthy_humidity) / max(failure_humidity - healthy_humidity, 1), 0, 1.3
+    )
+
+    latent_risk = (
+        0.26 * temp_risk
+        + 0.24 * pressure_risk
+        + 0.27 * vibration_risk
+        + 0.15 * flow_risk
+        + 0.08 * humidity_risk
+        + rng.gauss(0, 0.12)
+    )
+
+    failure_probability = clamp(sigmoid((latent_risk - 0.62) * 4.8), 0.03, 0.92)
+    failure = weighted_choice(rng, failure_probability)
 
     return {
         "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
