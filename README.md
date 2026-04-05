@@ -26,7 +26,8 @@ The application is designed to support a typical monitoring workflow:
 
 
 ### Sequence Diagram
-![alt text](image.png)
+<img width="1485" height="888" alt="refinary_prediction_SequenceDiagram" src="https://github.com/user-attachments/assets/42bb8708-8571-4d02-9fbc-0aba0fab2914" />
+
 
 ```
 
