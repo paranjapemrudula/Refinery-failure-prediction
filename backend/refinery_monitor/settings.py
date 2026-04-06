@@ -49,13 +49,29 @@ def env_bool(name, default=False):
     return value in {"1", "true", "yes", "on"}
 
 
+def env_list(name, default=""):
+    raw_value = env(name, default)
+    if not raw_value:
+        return []
+    return [item.strip() for item in str(raw_value).split(",") if item.strip()]
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("DJANGO_SECRET_KEY", "django-insecure-dev-only-change-me")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env_bool("DJANGO_DEBUG", True)
+DEBUG = env_bool("DJANGO_DEBUG", False)
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+ALLOWED_HOSTS = env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    "127.0.0.1,localhost,testserver" if DEBUG else "",
+)
+
+if not DEBUG and SECRET_KEY == "django-insecure-dev-only-change-me":
+    raise RuntimeError("Set DJANGO_SECRET_KEY before running in production.")
+
+if not DEBUG and not ALLOWED_HOSTS:
+    raise RuntimeError("Set DJANGO_ALLOWED_HOSTS before running in production.")
 
 
 # Application definition
@@ -166,11 +182,30 @@ ML_MODEL_PATH = BASE_DIR / 'artifacts' / 'failure_model.joblib'
 ML_METADATA_PATH = BASE_DIR / 'artifacts' / 'failure_model_metadata.json'
 OPENAI_API_KEY = env("OPENAI_API_KEY", "")
 OPENAI_REPORT_MODEL = env("OPENAI_REPORT_MODEL", "gpt-4.1-mini")
+GEMINI_API_KEY = env("GEMINI_API_KEY", "")
+GEMINI_REPORT_MODEL = env("GEMINI_REPORT_MODEL", "gemini-2.5-flash")
 
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
+    *env_list(
+        "DJANGO_CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173" if DEBUG else "",
+    ),
 ]
+
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", not DEBUG)
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)
+SECURE_HSTS_SECONDS = int(env("DJANGO_SECURE_HSTS_SECONDS", "31536000" if not DEBUG else "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG
+)
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", False)
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

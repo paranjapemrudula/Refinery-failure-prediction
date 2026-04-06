@@ -48,15 +48,9 @@ The application is designed to support a typical monitoring workflow:
 - React Router
 - Recharts
 - Vite
-
-
-
-
-
 ## Local Setup
 
 ### 1. Backend
-
 Install Python dependencies:
 
 ```bash
@@ -110,9 +104,29 @@ Optional backend environment variables for AI-assisted reports:
 ```bash
 OPENAI_API_KEY=api_key
 OPENAI_REPORT_MODEL=gpt-4.1-mini
+GEMINI_API_KEY=google_ai_studio_key
+GEMINI_REPORT_MODEL=gemini-2.5-flash
 ```
 
 If these variables are not configured, report generation falls back to the built-in rule-based implementation.
+
+Minimum deployment environment variables:
+
+```bash
+DJANGO_SECRET_KEY=replace-with-a-strong-secret-key
+DJANGO_DEBUG=False
+DJANGO_ALLOWED_HOSTS=your-api-domain.com
+DJANGO_CORS_ALLOWED_ORIGINS=https://your-frontend-domain.com
+DJANGO_CSRF_TRUSTED_ORIGINS=https://your-frontend-domain.com
+DB_ENGINE=django.db.backends.postgresql
+DB_NAME=refinery_monitor_db
+DB_USER=postgres
+DB_PASSWORD=replace-with-your-db-password
+DB_HOST=your-db-host
+DB_PORT=5432
+```
+
+GenAI keys must stay in backend environment variables only. Do not add `OPENAI_API_KEY`, `GEMINI_API_KEY`, or any other AI secret to `frontend/.env`, `VITE_*` variables, or React source files.
 
 ## Useful Commands
 
@@ -123,7 +137,6 @@ python backend/scripts/generate_synthetic_data.py --rows 1000
 ```
 
 Train the failure model:
-
 ```bash
 python backend/scripts/train_failure_model.py
 ```

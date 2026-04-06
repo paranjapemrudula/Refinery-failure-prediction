@@ -87,9 +87,11 @@ export default function ReportsPage({
               <p className="muted">
                 Source:{" "}
                 <strong>
-                  {reportDetail.generation_source === "openai"
-                    ? "GenAI (OpenAI)"
-                    : "Rule-based fallback"}
+                  {reportDetail.generation_source === "gemini"
+                    ? "GenAI (Gemini)"
+                    : reportDetail.generation_source === "openai"
+                      ? "GenAI (OpenAI)"
+                      : "Rule-based fallback"}
                 </strong>
               </p>
               <div className="report-actions" style={{ marginBottom: "12px" }}>

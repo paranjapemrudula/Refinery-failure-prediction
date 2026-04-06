@@ -1,5 +1,10 @@
+import ast
 import json
+import logging
+import re
 from datetime import timedelta
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import joblib
 import pandas as pd
@@ -13,6 +18,9 @@ try:
     from openai import OpenAI
 except ImportError:  # pragma: no cover - optional dependency
     OpenAI = None
+
+
+logger = logging.getLogger(__name__)
 
 
 FEATURE_COLUMNS = [
@@ -207,6 +215,8 @@ def build_report_prompt(prediction: PredictionResult):
         "Use only the provided sensor values and prediction result.\n"
         "Do not invent prior maintenance history, extra machines, or unsupported causes.\n"
         "Return strict JSON with keys: summary, root_cause, recommended_steps.\n"
+        "Use double-quoted JSON keys and string values only.\n"
+        "Do not wrap the JSON in markdown fences.\n"
         "Keep each value concise and operationally useful.\n\n"
         f"Machine ID: {reading.machine_id}\n"
         f"Recorded At: {reading.recorded_at.isoformat()}\n"
@@ -223,12 +233,203 @@ def build_report_prompt(prediction: PredictionResult):
     )
 
 
+def parse_report_json_content(content: str):
+    cleaned = str(content or "").strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        try:
+            parsed = ast.literal_eval(cleaned)
+            if isinstance(parsed, dict):
+                return parsed
+        except (SyntaxError, ValueError):
+            pass
+
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            candidate = cleaned[start : end + 1]
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(candidate)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except (SyntaxError, ValueError):
+                    pass
+                normalized = re.sub(
+                    r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)',
+                    r'\1"\2"\3',
+                    candidate,
+                )
+                normalized = re.sub(r":\s*'([^'\\]*(?:\\.[^'\\]*)*)'", r': "\1"', normalized)
+                return json.loads(normalized)
+        raise
+
+
+def parse_report_keyed_text(content: str):
+    cleaned = str(content or "").strip()
+    patterns = {
+        "summary": r"summary\s*[:=]\s*(.+?)(?=\broot_cause\b\s*[:=]|\brecommended_steps\b\s*[:=]|$)",
+        "root_cause": r"root_cause\s*[:=]\s*(.+?)(?=\bsummary\b\s*[:=]|\brecommended_steps\b\s*[:=]|$)",
+        "recommended_steps": r"recommended_steps\s*[:=]\s*(.+?)(?=\bsummary\b\s*[:=]|\broot_cause\b\s*[:=]|$)",
+    }
+    extracted = {}
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, cleaned, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            return None
+        value = match.group(1).strip().strip(",")
+        value = value.strip().strip('"').strip("'").strip()
+        extracted[key] = value
+
+    return extracted
+
+
+def extract_partial_report_fields(content: str):
+    cleaned = str(content or "").strip()
+    extracted = {}
+    patterns = {
+        "summary": r'"summary"\s*:\s*"(?P<value>.*?)(?=",\s*"root_cause"|,\s*"recommended_steps"|$)',
+        "root_cause": r'"root_cause"\s*:\s*"(?P<value>.*?)(?=",\s*"recommended_steps"|,\s*"summary"|$)',
+        "recommended_steps": r'"recommended_steps"\s*:\s*"(?P<value>.*?)(?=",\s*"summary"|,\s*"root_cause"|$)',
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, cleaned, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        value = match.group("value").replace('\\"', '"').strip()
+        if value:
+            extracted[key] = value
+
+    return extracted
+
+
 def parse_openai_report_content(content: str):
-    payload = json.loads(content)
+    try:
+        payload = parse_report_json_content(content)
+    except (json.JSONDecodeError, SyntaxError, ValueError):
+        payload = parse_report_keyed_text(content)
+        if not payload:
+            payload = extract_partial_report_fields(content)
+        if not payload:
+            logger.warning("Could not parse GenAI report content: %s", content)
+            raise
     return (
-        payload["summary"].strip(),
-        payload["root_cause"].strip(),
-        payload["recommended_steps"].strip(),
+        payload.get("summary", "").strip(),
+        payload.get("root_cause", "").strip(),
+        payload.get("recommended_steps", "").strip(),
+    )
+
+
+def parse_gemini_response_text(payload: dict) -> str:
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        return ""
+
+    parts = (
+        candidates[0]
+        .get("content", {})
+        .get("parts", [])
+    )
+    text_chunks = [
+        part.get("text", "").strip()
+        for part in parts
+        if isinstance(part, dict) and part.get("text")
+    ]
+    return "\n".join(text_chunks).strip()
+
+
+def get_gemini_api_key():
+    gemini_api_key = getattr(settings, "GEMINI_API_KEY", "").strip()
+    if gemini_api_key:
+        return gemini_api_key
+
+    openai_api_key = getattr(settings, "OPENAI_API_KEY", "").strip()
+    if openai_api_key.startswith("AIza"):
+        return openai_api_key
+    if openai_api_key.startswith("sk-AIza"):
+        return openai_api_key[3:]
+
+    return ""
+
+
+def generate_gemini_report_sections(
+    prediction: PredictionResult,
+) -> Optional[tuple[str, str, str]]:
+    if prediction.alert_level == "Low":
+        return None
+
+    api_key = get_gemini_api_key()
+    model_name = getattr(settings, "GEMINI_REPORT_MODEL", "").strip()
+    if not api_key or not model_name:
+        return None
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": build_report_prompt(prediction),
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 700,
+            "responseMimeType": "application/json",
+        },
+    }
+    endpoint = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model_name}:generateContent"
+    )
+    request = urllib_request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(request, timeout=30) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except urllib_error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        logger.warning("Gemini report generation failed with HTTP %s: %s", exc.code, error_body)
+        raise
+
+    text_output = parse_gemini_response_text(response_payload)
+    if not text_output:
+        logger.warning("Gemini report generation returned no text output: %s", response_payload)
+        return None
+
+    summary, root_cause, recommended_steps = parse_openai_report_content(text_output)
+    if not summary and not root_cause and not recommended_steps:
+        return None
+
+    fallback_summary, fallback_root_cause, fallback_recommended_steps = (
+        build_report_sections(prediction)
+    )
+    return (
+        summary or fallback_summary,
+        root_cause or fallback_root_cause,
+        recommended_steps or fallback_recommended_steps,
     )
 
 
@@ -258,11 +459,19 @@ def create_generated_report(prediction: PredictionResult):
     source = GeneratedReport.SOURCE_RULE_BASED
 
     try:
-        openai_sections = generate_openai_report_sections(prediction)
-        if openai_sections:
-            summary, root_cause, recommended_steps = openai_sections
-            source = GeneratedReport.SOURCE_OPENAI
+        gemini_sections = generate_gemini_report_sections(prediction)
+        if gemini_sections:
+            summary, root_cause, recommended_steps = gemini_sections
+            source = GeneratedReport.SOURCE_GEMINI
+        else:
+            openai_sections = generate_openai_report_sections(prediction)
+            if openai_sections:
+                summary, root_cause, recommended_steps = openai_sections
+                source = GeneratedReport.SOURCE_OPENAI
     except Exception:
+        logger.exception(
+            "Falling back to rule-based report for prediction %s", prediction.id
+        )
         source = GeneratedReport.SOURCE_RULE_BASED
 
     return GeneratedReport.objects.create(

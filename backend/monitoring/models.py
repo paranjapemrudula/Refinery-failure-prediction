@@ -74,9 +74,11 @@ class MaintenanceAlert(models.Model):
 class GeneratedReport(models.Model):
     SOURCE_RULE_BASED = "rule_based"
     SOURCE_OPENAI = "openai"
+    SOURCE_GEMINI = "gemini"
     SOURCE_CHOICES = [
         (SOURCE_RULE_BASED, "Rule Based"),
         (SOURCE_OPENAI, "OpenAI"),
+        (SOURCE_GEMINI, "Gemini"),
     ]
 
     prediction = models.OneToOneField(
