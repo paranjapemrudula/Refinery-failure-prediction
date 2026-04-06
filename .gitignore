@@ -9,9 +9,9 @@ backend/artifacts/*.joblib
 backend/artifacts/*.json
 frontend/node_modules/
 frontend/dist/
+backend/staticfiles/
 docs/backend.md
 docs/frontend.md
 docs/model_training.md
 docs/project_journal.md
 docs/technical_interview_questions.md
-

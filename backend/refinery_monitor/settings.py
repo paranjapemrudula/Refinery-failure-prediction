@@ -176,7 +176,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 ML_MODEL_PATH = BASE_DIR / 'artifacts' / 'failure_model.joblib'
 ML_METADATA_PATH = BASE_DIR / 'artifacts' / 'failure_model_metadata.json'

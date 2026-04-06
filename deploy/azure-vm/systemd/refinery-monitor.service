@@ -1,0 +1,15 @@
+[Unit]
+Description=Refinery Monitor Gunicorn Service
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/refinery-monitor/backend
+EnvironmentFile=/etc/refinery-monitor/backend.env
+ExecStart=/var/www/refinery-monitor/.venv/bin/gunicorn refinery_monitor.wsgi:application --workers 3 --bind 127.0.0.1:8000 --timeout 120
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
