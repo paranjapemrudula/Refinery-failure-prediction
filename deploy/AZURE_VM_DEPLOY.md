@@ -142,7 +142,27 @@ cd /var/www/refinery-monitor
 bash deploy/azure-vm/scripts/release.sh
 ```
 
-## 10. Useful checks
+## 10. GitHub Actions deployment
+
+This repository includes:
+
+- `.github/workflows/ci.yml` for backend/frontend validation
+- `.github/workflows/deploy-azure-vm.yml` for VM deployment over SSH
+
+Add these GitHub repository secrets before enabling automatic deploys:
+
+- `AZURE_VM_HOST`: your VM public IP or DNS name
+- `AZURE_VM_USER`: your SSH username, for example `azureuser`
+- `AZURE_VM_SSH_PRIVATE_KEY`: the full private key contents used to connect to the VM
+
+The deploy workflow runs the existing VM release script:
+
+```bash
+cd /var/www/refinery-monitor
+bash deploy/azure-vm/scripts/release.sh
+```
+
+## 11. Useful checks
 
 ```bash
 sudo journalctl -u refinery-monitor -n 100 --no-pager
